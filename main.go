@@ -4,15 +4,17 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
+	"time"
 )
 
-// Defining custom errors
+// Custom errors
 var (
 	ErrNotImplemented = errors.New("not implemented")
 	ErrTruckNotFound  = errors.New("truck not found")
 )
 
-// Truck interface defines the behavior (blueprint)
+// Truck interface defines the behavior
 type Truck interface {
 	LoadCargo() error
 	UnloadCargo() error
@@ -25,6 +27,7 @@ type NormalTruck struct {
 }
 
 func (n *NormalTruck) LoadCargo() error {
+	time.Sleep(1 * time.Second) // Simulating heavy work
 	n.cargo += 1
 	return nil
 }
@@ -42,6 +45,7 @@ type ElectricTruck struct {
 }
 
 func (e *ElectricTruck) LoadCargo() error {
+	time.Sleep(1 * time.Second) // Simulating heavy work
 	e.cargo += 1
 	e.battery -= 1
 	return nil
@@ -53,9 +57,9 @@ func (e *ElectricTruck) UnloadCargo() error {
 	return nil
 }
 
-// processTruck accepts the interface, not a concrete struct
+// processTruck single truck ko execute karta hai
 func processTruck(t Truck) error {
-	fmt.Printf("Processing truck\n")
+	fmt.Printf("Started processing truck: %v\n", t)
 
 	if err := t.LoadCargo(); err != nil {
 		return fmt.Errorf("error loading cargo: %w", err)
@@ -65,22 +69,43 @@ func processTruck(t Truck) error {
 		return fmt.Errorf("error unloading cargo: %w", err)
 	}
 
+	fmt.Printf("Finished processing truck: %v\n", t)
+	return nil
+}
+
+// processFleet handles concurrent processing of multiple trucks
+func processFleet(trucks []Truck) error {
+	var wg sync.WaitGroup
+
+	for _, t := range trucks {
+		wg.Add(1) // Counter ko 1 se badhao har ek truck ke liye
+
+		// Goroutine start karne ke liye 'go' keyword lagaya aur closure pass kiya
+		go func(truck Truck) {
+			if err := processTruck(truck); err != nil {
+				log.Println(err) // Goroutine ke andar error log kar rahe hain
+			}
+			wg.Done() // Goroutine khatam hote hi counter ko 1 kam karo
+		}(t) // Variable pinning issue se bachne ke liye 't' ko parameter pass kiya
+	}
+
+	wg.Wait() // Jab tak counter 0 nahi hota, tab tak main execution ko roko
 	return nil
 }
 
 func main() {
-	nt := &NormalTruck{id: "Normal-1"}
-	et := &ElectricTruck{id: "Electric-1", battery: 100}
-
-	// Both can be passed to processTruck because they implement the interface
-	if err := processTruck(nt); err != nil {
-		log.Fatalf("Error processing normal truck: %s", err)
+	fleet := []Truck{
+		&NormalTruck{id: "NT1", cargo: 0},
+		&ElectricTruck{id: "ET1", cargo: 0, battery: 100},
+		&NormalTruck{id: "NT2", cargo: 0},
+		&ElectricTruck{id: "ET2", cargo: 0, battery: 100},
 	}
 
-	if err := processTruck(et); err != nil {
-		log.Fatalf("Error processing electric truck: %s", err)
+	// Fleet ko concurrently process kar rahe hain
+	if err := processFleet(fleet); err != nil {
+		fmt.Printf("Error processing fleet: %v\n", err)
+		return
 	}
 
-	fmt.Printf("Normal Truck Cargo: %d\n", nt.cargo)
-	fmt.Printf("Electric Truck Battery: %.1f\n", et.battery)
+	fmt.Println("All trucks processed successfully!")
 }
